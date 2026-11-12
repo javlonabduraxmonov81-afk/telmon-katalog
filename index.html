@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Telmon katalog</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:var(--tg-theme-bg-color,#fff);--bg2:var(--tg-theme-secondary-bg-color,#f2f3f5);
+  --tx:var(--tg-theme-text-color,#111);--hint:var(--tg-theme-hint-color,#8a8f98);
+  --btn:var(--tg-theme-button-color,#2481cc);--btntx:var(--tg-theme-button-text-color,#fff);
+  --red:#e53935;--green:#2e9d4f
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font:15px/1.35 -apple-system,system-ui,Roboto,sans-serif;background:var(--bg2);color:var(--tx)}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 10px 6px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+#q{width:100%;padding:10px 12px;border:0;border-radius:10px;background:var(--bg2);color:var(--tx);font-size:16px;outline:none}
+#cats{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;scrollbar-width:none}
+#cats::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:6px 12px;border-radius:16px;background:var(--bg2);font-size:13px;white-space:nowrap;cursor:pointer}
+.chip.on{background:var(--btn);color:var(--btntx)}
+#info{padding:8px 12px;color:var(--hint);font-size:13px}
+#grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 8px 90px}
+.card{background:var(--bg);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.ph{aspect-ratio:1/1;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:44px;position:relative}
+.ph img{width:100%;height:100%;object-fit:contain;background:#fff}
+.badge{position:absolute;top:6px;left:6px;background:var(--red);color:#fff;font-size:11px;padding:2px 6px;border-radius:8px}
+.body{padding:8px;display:flex;flex-direction:column;gap:4px;flex:1}
+.nm{font-size:13px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.pr{font-weight:700;font-size:15px;margin-top:auto}
+.old{color:var(--hint);text-decoration:line-through;font-size:12px;font-weight:400;margin-left:4px}
+.add{border:0;border-radius:9px;padding:8px;background:var(--green);color:#fff;font-size:14px;cursor:pointer}
+.add[disabled]{background:var(--red);opacity:.6}
+.qty{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:9px}
+.qty button{border:0;background:none;color:var(--btn);font-size:20px;width:38px;height:34px;cursor:pointer}
+#more{grid-column:1/-1;margin:6px auto;padding:10px 18px;border:0;border-radius:10px;background:var(--bg);color:var(--btn)}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:9;align-items:flex-end}
+#sheet .box{background:var(--bg);width:100%;max-height:85vh;overflow:auto;border-radius:16px 16px 0 0;padding:14px 14px 90px}
+.row{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bg2)}
+.row .nm{flex:1;-webkit-line-clamp:2}
+.x{border:0;background:none;color:var(--hint);font-size:18px}
+#cartbtn{position:fixed;left:10px;right:10px;bottom:10px;z-index:6;border:0;border-radius:12px;padding:14px;background:var(--btn);color:var(--btntx);font-size:16px;font-weight:600;display:none}
+.empty{grid-column:1/-1;text-align:center;color:var(--hint);padding:30px 10px}
+pre.d{white-space:pre-wrap;font:inherit;margin:8px 0}
+</style>
+</head>
+<body>
+<header>
+  <input id="q" type="search" placeholder="🔍 Mahsulot nomi (masalan: bolgarka)" autocomplete="off">
+  <div id="cats"></div>
+</header>
+<div id="info">Yuklanmoqda…</div>
+<div id="grid"></div>
+<button id="cartbtn"></button>
+<div id="sheet"><div class="box" id="box"></div></div>
+
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const ICON = {"Asbob-uskuna":"🛠","Elektr":"💡","Bo'yoq va lak":"🎨","Germetika":"🧴","Santexnika":"🚿",
+  "Xo'jalik mollari":"🧹","Bog' va hovli":"🌱","Mahkamlagich":"🔩","Qurilish aralashmasi":"🧱","Boshqa":"📦"};
+const PAGE = 40, STOP = ["bormi","bor","kerak","narxi","qancha","nechpul","sotiladimi"];
+let ALL = [], SYN = [], cat = "", shown = PAGE, cart = {};
+const $ = s => document.querySelector(s);
+const norm = s => (s||"").toLowerCase().replace(/[‘’ʻʼ`´]/g,"'");
+const som = n => n.toLocaleString("ru-RU").replace(/,/g," ") + " so'm";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const byId = id => ALL.find(x => x.id === id);
+
+try { cart = JSON.parse(localStorage.getItem("telmon_savat") || "{}"); } catch(e) { cart = {}; }
+function save(){ try { localStorage.setItem("telmon_savat", JSON.stringify(cart)); } catch(e) {} }
+
+fetch("catalog.json?" + Date.now()).then(r => r.json()).then(j => {
+  SYN = (j.syn||"").split(";").map(g => g.split(",").map(w => norm(w).trim()).filter(Boolean)).filter(g => g.length);
+  ALL = j.items.map(x => ({...x, t: norm(x.t) === norm("Bo'yoq va lak") ? "Bo'yoq va lak" : x.t,
+    s: norm(x.n + " " + (x.k||"") + " " + x.t)}));
+  for (const id in cart) if (!byId(id) || byId(id).q <= 0) delete cart[id];
+  cats(); render(); bar();
+}).catch(() => { $("#info").textContent = "Katalog yuklanmadi. Internetni tekshirib, qayta oching."; });
+
+function cats(){
+  const cnt = {}; ALL.forEach(x => cnt[x.t] = (cnt[x.t]||0) + 1);
+  const list = [["", "Hammasi"]];
+  if (ALL.some(x => x.a)) list.push(["🔥", "🔥 Aksiya"]);
+  Object.keys(cnt).sort((a,b) => cnt[b]-cnt[a]).forEach(t => list.push([t, (ICON[t]||"📦") + " " + t]));
+  $("#cats").innerHTML = list.map(([v,l]) => `<span class="chip${v===cat?" on":""}" data-c="${esc(v)}">${esc(l)}</span>`).join("");
+}
+$("#cats").onclick = e => { const c = e.target.closest(".chip"); if (!c) return;
+  cat = c.dataset.c; shown = PAGE; cats(); render(); window.scrollTo(0,0); };
+let tmr; $("#q").oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => { shown = PAGE; render(); }, 200); };
+
+function list(){
+  const words = norm($("#q").value).trim().split(/\s+/).filter(w => w.length > 1 && !STOP.includes(w));
+  const alts = words.map(w => { const a = new Set([w]); const st = w.length > 4 ? w.slice(0, -2) : w;
+    SYN.forEach(g => { if (g.some(t => t === w || t.startsWith(st))) g.forEach(t => a.add(t.length > 4 ? t.slice(0, -1) : t)); });
+    return [...a]; });
+  let r = ALL.filter(x => (!cat || (cat==="🔥" ? x.a : x.t===cat)) && alts.every(a => a.some(w => x.s.includes(w))));
+  return r.sort((a,b) => (b.q>0)-(a.q>0) || (!!b.a)-(!!a.a) || (!!b.img)-(!!a.img));
+}
+function card(x){
+  const n = cart[x.id]||0, old = x.a && x.a < x.p;
+  const price = old ? `${som(x.a)}<span class="old">${som(x.p)}</span>` : som(x.p);
+  const ctl = x.q <= 0 ? `<button class="add" disabled>❌ Tugagan</button>`
+    : n ? `<div class="qty"><button data-m="${x.id}">−</button><b>${n}</b><button data-p="${x.id}">+</button></div>`
+        : `<button class="add" data-p="${x.id}">🛒 Savatga</button>`;
+  return `<div class="card"><div class="ph" data-i="${x.id}">${x.img ? `<img loading="lazy" src="${esc(x.img)}" alt="" onerror="this.replaceWith('${ICON[x.t]||"📦"}')">` : (ICON[x.t]||"📦")}${x.a?'<span class="badge">🔥 Aksiya</span>':""}</div>
+    <div class="body"><div class="nm" data-i="${x.id}">${esc(x.n)}</div><div class="pr">${price}</div>${ctl}</div></div>`;
+}
+function render(){
+  const r = list();
+  $("#info").textContent = r.length ? `${r.length} ta mahsulot` : "";
+  $("#grid").innerHTML = r.length ? r.slice(0, shown).map(card).join("") + (r.length > shown ? `<button id="more">Yana ko'rsatish (${r.length-shown})</button>` : "")
+    : `<div class="empty">Topilmadi 😕<br>Boshqa so'z bilan yozib ko'ring yoki do'konga qo'ng'iroq qiling.</div>`;
+}
+document.body.addEventListener("click", e => {
+  const t = e.target;
+  if (t.id === "more") { shown += PAGE; render(); return; }
+  if (t.dataset.p) { add(t.dataset.p, 1); return; }
+  if (t.dataset.m) { add(t.dataset.m, -1); return; }
+  const i = t.closest("[data-i]"); if (i) detail(i.dataset.i);
+});
+function add(id, d){
+  const x = byId(id); if (!x) return;
+  const n = Math.max(0, Math.min((cart[id]||0) + d, x.q));
+  if (n === (cart[id]||0) && d > 0) { tg && tg.showAlert ? tg.showAlert(`Omborda ${x.q} dona bor.`) : alert(`Omborda ${x.q} dona bor.`); return; }
+  if (n) cart[id] = n; else delete cart[id];
+  save(); tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+  if ($("#sheet").style.display === "flex") showCart(); render(); bar();
+}
+function total(){ let s = 0, c = 0; for (const id in cart) { const x = byId(id); if (x) { s += (x.a && x.a < x.p ? x.a : x.p) * cart[id]; c += cart[id]; } } return [c, s]; }
+function bar(){
+  const [c, s] = total(), b = $("#cartbtn");
+  b.style.display = c ? "block" : "none"; b.textContent = `🧺 Savat: ${c} ta — ${som(s)}`;
+}
+$("#cartbtn").onclick = () => showCart();
+$("#sheet").onclick = e => { if (e.target.id === "sheet") close(); };
+function close(){ $("#sheet").style.display = "none"; bar(); }
+function detail(id){
+  const x = byId(id); if (!x) return;
+  $("#box").innerHTML = `<div class="ph" style="border-radius:12px">${x.img ? `<img src="${esc(x.img)}" alt="">` : (ICON[x.t]||"📦")}</div>
+    <h3>${esc(x.n)}</h3><div class="pr">${x.a && x.a < x.p ? `${som(x.a)}<span class="old">${som(x.p)}</span>` : som(x.p)}</div>
+    ${x.d ? `<pre class="d">${esc(x.d)}</pre>` : ""}<p style="color:var(--hint)">${x.q > 0 ? "✅ Mavjud" : "❌ Hozir tugagan"}</p>`;
+  $("#sheet").style.display = "flex"; $("#cartbtn").style.display = "none";
+}
+function showCart(){
+  const ids = Object.keys(cart);
+  if (!ids.length) { close(); return; }
+  const [c, s] = total();
+  $("#box").innerHTML = `<h3>🧺 Savat</h3>` + ids.map(id => { const x = byId(id);
+    return `<div class="row"><div class="nm">${esc(x.n)}<br><small style="color:var(--hint)">${som(x.a && x.a < x.p ? x.a : x.p)}</small></div>
+      <div class="qty"><button data-m="${id}">−</button><b>${cart[id]}</b><button data-p="${id}">+</button></div></div>`; }).join("")
+    + `<p><b>Jami: ${som(s)}</b></p><button class="add" id="send" style="width:100%;padding:14px;font-size:16px">✅ Buyurtma berish</button>
+       <p style="color:var(--hint);font-size:13px">Keyingi qadam (yetkazish, telefon, to'lov) bot chatida davom etadi.</p>`;
+  $("#sheet").style.display = "flex"; $("#cartbtn").style.display = "none";
+  $("#send").onclick = send;
+}
+function send(){
+  const data = JSON.stringify({t: "savat", i: Object.entries(cart)});
+  if (!tg || !tg.initData || tg.initDataUnsafe.query_id) {
+    const m = "Buyurtma uchun katalogni botdagi pastki «📂 Katalog» tugmasidan oching.";
+    tg && tg.showAlert ? tg.showAlert(m) : alert(m); return;
+  }
+  cart = {}; save(); tg.sendData(data);
+}
+</script>
+</body>
+</html>
