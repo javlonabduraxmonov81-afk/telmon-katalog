@@ -157,7 +157,7 @@ function showCart(){
 }
 function send(){
   const data = JSON.stringify({t: "savat", i: Object.entries(cart)});
-  if (!tg || tg.platform === "unknown" || (tg.initDataUnsafe && tg.initDataUnsafe.query_id)) {
+  if (!tg || !(tg.initData || window.parent !== window || window.TelegramWebviewProxy || window.external && window.external.notify) || (tg.initDataUnsafe && tg.initDataUnsafe.query_id)) {
     const m = "Buyurtma uchun katalogni botdagi pastki «📂 Katalog» tugmasidan oching.";
     tg && tg.showAlert ? tg.showAlert(m) : alert(m); return;
   }
